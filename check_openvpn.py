@@ -48,20 +48,37 @@ def getNumConnected():
     
 
 def getTraffic():
+    f = open("check_openvpn_traffic.tmp", "w")
+    f.close()
+    
     f = open("check_openvpn_traffic.tmp", "r+")
     tData = f.readline().split(';')
-    oTime = tData[0]
-    oIn = tData[1]
-    oOut = tData[2]
+    if len(tData) <= 0:
+        oTime = 0
+        oIn = 0
+        oOut = 0
+    else:
+        oTime = tData[0]
+        oIn = tData[1]
+        oOut = tData[2]
     
     data = []
     while len(data) <= 0:
         data = getData("load-stats")
     work = data[0].split(',')
-    aTime = 
+    aTime = datetime.now()
     aIn = work[1].split('=')[1]
     aOut = work[2].split('=')[2]
-
+    
+    dTime = (aTime - oTime).seconds
+    dIn = aIn - oIn
+    dOut = aOut - oOut
+    
+    f.seek(0)
+    f.write(`aTime` + ";%d;%d" % (aIn, aOut))
+    f.close()
+    
+    return dIn/dTime, dOut/dTime
 
 cmd = args.command.lower()
 
