@@ -48,37 +48,46 @@ def getNumConnected():
     
 
 def getTraffic():
-    f = open("check_openvpn_traffic.tmp", "w")
+    f = open("check_openvpn_traffic.tmp", "a")
     f.close()
     
     f = open("check_openvpn_traffic.tmp", "r+")
-    tData = f.readline().split(';')
+    tData = f.readline()
+    empty = False
+    
     if len(tData) <= 0:
-        oTime = 0
+        oTime = datetime.now()
         oIn = 0
         oOut = 0
+        empty = True
     else:
-        oTime = tData[0]
-        oIn = tData[1]
-        oOut = tData[2]
+        tData = tData.split(';')
+        oTime = datetime.strptime(tData[0], "'%Y-%m-%d %H:%M:%S.%f'")
+        oIn = int(tData[1])
+        oOut = int(tData[2])
     
     data = []
     while len(data) <= 0:
         data = getData("load-stats")
     work = data[0].split(',')
     aTime = datetime.now()
-    aIn = work[1].split('=')[1]
-    aOut = work[2].split('=')[2]
+    aIn = int(work[1].split('=')[1])
+    aOut = int(work[2].split('=')[1])
     
-    dTime = (aTime - oTime).seconds
-    dIn = aIn - oIn
-    dOut = aOut - oOut
+    if empty:
+        dTime = 1
+        dIn = 0
+        dOut = 0
+    else:
+        dTime = float((aTime - oTime).seconds)
+        dIn = float(aIn - oIn)
+        dOut = float(aOut - oOut)
     
     f.seek(0)
-    f.write(`aTime` + ";%d;%d" % (aIn, aOut))
+    f.write(`str(aTime)` + ";%d;%d" % (aIn, aOut))
     f.close()
     
-    return dIn/dTime, dOut/dTime
+    return "%.2f" % ((dIn/1024)/dTime), "%.2f" % ((dOut/1024)/dTime)
 
 cmd = args.command.lower()
 
@@ -103,5 +112,7 @@ if cmd == "maxconnections":
         exit(2)
 elif cmd == "traffic":
     dIn, dOut = getTraffic()
+    print dIn
+    print dOut
 
 exit(3)
