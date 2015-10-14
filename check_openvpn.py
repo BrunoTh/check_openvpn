@@ -6,33 +6,37 @@ import time
 import re
 from datetime import datetime
 
-argp = argparse.ArgumentParser()
+argp = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 argp.add_argument('-H', '--hostaddress', help='OpenVPN Server Address')
 argp.add_argument('-p', '--port', help='OpenVPN Server Interface Port')
-argp.add_argument('-C', '--command', help='')
+argp.add_argument('-C', '--command', help='maxconnections - monitor amount of connections\ntraffic - monitor traffic')
 argp.add_argument('-S', '--service', help='Nagios service name')
-argp.add_argument('-w', '--warning', help='')
-argp.add_argument('-c', '--critical', help='')
+argp.add_argument('-w', '--warning', help='warning threshold')
+argp.add_argument('-c', '--critical', help='critical threshold')
 #argp.add_argument('-C', '--command', help='OpenVPN Management Interface Command')
 args = argp.parse_args()
 
 #USES THE OPENVPN MANAGEMENT INTERFACE FOR DATA
 def getData(command):
-    con = telnetlib.Telnet(args.hostaddress, int(args.port))
-    con.read_eager()
-    time.sleep(.1)
-    con.write(command + "\n")
-    con.write("exit\n")
-    #time.sleep(.2)
-    res = con.read_all()
-    
-    a_res = []
-    for line in res.splitlines():
-        if re.search("OpenVPN Management Interface", line) or re.search("END", line):
-             continue
-        a_res.append(line)
-    
-    con.close()
+    try:
+        con = telnetlib.Telnet(args.hostaddress, int(args.port), 5)
+        con.read_eager()
+        time.sleep(.1)
+        con.write(command + "\n")
+        con.write("exit\n")
+        #time.sleep(.2)
+        res = con.read_all()
+        
+        a_res = []
+        for line in res.splitlines():
+            if re.search("OpenVPN Management Interface", line) or re.search("END", line):
+                 continue
+            a_res.append(line)
+        
+        con.close()
+    except:
+        print "ERROR: Connection to Server failed."
+        exit(2)
     return a_res
 
 
@@ -43,8 +47,8 @@ def getNumConnected():
         data = getData("load-stats")
     
     if len(data) <= 0:
-        print "Connection to Server failed!"
-        exit(3)
+        print "ERROR: Connection to Server failed!"
+        exit(2)
     
     work = data[0].split(',')
     work = work[0].split('=')
@@ -126,7 +130,7 @@ if cmd == "maxconnections":
 elif cmd == "traffic":
     dIn, dOut = getTraffic()
     
-    performance = "'Incoming KB/s'=%.2f;%d;%d;0; 'Outgoing KB/s'=%.2f;%d;%d;0;" % (dIn, warning, critical, dOut, warning, critical)
+    performance = "'Incoming'=%.2fKB/s;%d;%d;0; 'Outgoing'=%.2fKB/s;%d;%d;0;" % (dIn, warning, critical, dOut, warning, critical)
     
     if dIn < warning and dOut < warning:
         print "OK: In - %.2f; Out - %.2f |%s" % (dIn, dOut, performance)
