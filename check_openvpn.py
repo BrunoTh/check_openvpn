@@ -50,7 +50,6 @@ def receive_data(hostaddress, port, command):
     received = False
     count = 0
     timeout = 10
-
     while not received and count <= timeout:
         data = get_data(hostaddress, port, command)
         if len(data) >= 1:
@@ -97,52 +96,97 @@ def get_avgtraffic(hostaddress, port, service, intervall):
     open("/tmp/check_openvpn-traffic-%s-%s.tmp" % (service, hostaddress), "a").close()
 
     with open("/tmp/check_openvpn-traffic-%s-%s.tmp" % (service, hostaddress), "r+") as f:
-        temp_data = f.readline()
-        empty = False
+        temp_data = f.read()
+
+        temp_data_lines = temp_data.splitlines()
 
         if len(temp_data) <= 0:
-            old_time = datetime.now()
-            old_in = 0
-            old_out = 0
-            empty = True
+            new_line = "%d;%s;0;0;0;0" % (intervall, str(datetime.now()))
+            f.seek(0)
+            f.write(new_line)
+
+            return 0, 0
         else:
-            temp_data = temp_data.split(';')
-            old_time = datetime.strptime(temp_data[0], "%Y-%m-%d %H:%M:%S.%f")
-            old_in = int(temp_data[1])
-            old_out = int(temp_data[2])
+            migrate_file(f)
 
-        data = receive_data(hostaddress, port, "load-stats")
+            create_new_line = True
+            old_line = ""
+            for line in temp_data_lines:
+                segments = line.split(';')
+                if int(segments[0]) == intervall:
+                    old_line = line
+                    create_new_line = False
+                else:
+                    continue
 
-        if type(data) is str and data.find("ERROR") >= 0:
-            print data
-            exit(2)
+            actual_data = receive_data(hostaddress, port, "load-stats")
 
-        work = data[0].split(',')
-        actual_time = datetime.now()
-        actual_in = int(work[1].split('=')[1])
-        actual_out = int(work[2].split('=')[1])
+            if type(actual_data) is str and actual_data.find("ERROR") >= 0:
+                print actual_data
+                exit(2)
+            work = actual_data[0].split(',')
+            actual_time = datetime.now()
+            actual_in = int(work[1].split('=')[1])
+            actual_out = int(work[2].split('=')[1])
 
-        if empty:
-            delta_time = 1
-            delta_in = 0
-            delta_out = 0
-        else:
-            time_delta = actual_time - old_time
-            delta_time = time_delta.seconds + time_delta.microseconds*1E-6
-            delta_in = float(actual_in - old_in)
-            delta_out = float(actual_out - old_out)
+            if create_new_line:
+                new_line = "%d;%s;%d;%d;0;0" % (intervall, str(actual_time), actual_in, actual_out)
 
+                new_file = "%s\n%s" % (temp_data, new_line)
+                f.seek(0)
+                f.write(new_file)
+
+                return 0, 0
+            else:
+                segments = old_line.split(';')
+                old_time = datetime.strptime(segments[1], "%Y-%m-%d %H:%M:%S.%f")
+                old_in = int(segments[2])
+                old_out = int(segments[3])
+                old_value_in = int(segments[4])
+                old_value_out = int(segments[5])
+
+                delta_time = (actual_time - old_time).seconds
+
+                if delta_time >= intervall:
+                    delta_in = float(actual_in - old_in)*intervall/delta_time
+                    delta_out = float(actual_out - old_out)*intervall/delta_time
+                    new_line = "%d;%s;%d;%d;%.0f;%.0f" % (intervall, str(actual_time), actual_in, actual_out, delta_in,
+                                                            delta_out)
+                    new_file = temp_data.replace(old_line, new_line)
+                    f.seek(0)
+                    f.write(new_file)
+
+                    #kb_in = (float(delta_in)/1024)*intervall/delta_time
+                    #kb_out = (float(delta_out)/1024)*intervall/delta_time
+
+                    kb_in = delta_in/1024
+                    kb_out = delta_out/1024
+                else:
+                    kb_in = float(old_value_in)/1024
+                    kb_out = float(old_value_out)/1024
+
+                return float("%.2f" % kb_in), float("%.2f" % kb_out)
+
+    return 0, 0
+
+
+def migrate_file(f):
+    """
+    EDITS THE FILE CONTENT IF OUTDATED
+    NEW FILE FORMAT: time_intervall;timestamp;in;out;lastvalue_in;lastvalue_out
+    :param file:
+    :return:
+    """
+
+    f.seek(0)
+    data = f.readline()
+
+    if len(data.split(';')) == 3:
         f.seek(0)
-        f.write(str(actual_time) + ";%d;%d" % (actual_in, actual_out))
+        new_data = data.replace(data, "1;%s;0;0" % data)
+        f.write(new_data)
 
-    if delta_time+4*60 < intervall:
-        kb_in = 0
-        kb_out = 0
-    else:
-        kb_in = (delta_in/1024)*intervall/delta_time
-        kb_out = (delta_out/1024)*intervall/delta_time
-
-    return float("%.2f" % kb_in), float("%.2f" % kb_out)
+    return
 
 
 def get_momenttraffic(hostaddress, port):
@@ -158,7 +202,7 @@ def get_momenttraffic(hostaddress, port):
     if type(data) is str and data.find("ERROR") >= 0:
         print data
         exit(2)
-    
+
     work = data[0].split(',')
     actual_in = int(work[1].split('=')[1])
     actual_out = int(work[2].split('=')[1])
@@ -173,6 +217,7 @@ if __name__ == '__main__':
     argp.add_argument('-C', '--command',
                       help='maxconnections - monitor amount of connections\ntraffic - monitor traffic\nmomenttraffic - transfered MB')
     argp.add_argument('-S', '--service', help='Nagios service name')
+    argp.add_argument('-i', '--intervall', default=1, type=int, help="Check intervall in seconds for command 'traffic'")
     argp.add_argument('-w', '--warning', help='warning threshold')
     argp.add_argument('-c', '--critical', help='critical threshold')
     args = argp.parse_args()
@@ -204,9 +249,9 @@ if __name__ == '__main__':
 
     # CMD = TRAFFIC
     elif cmd == "traffic":
-        dIn, dOut = get_avgtraffic(args.hostaddress, args.port, args.service, 1)
+        dIn, dOut = get_avgtraffic(args.hostaddress, args.port, args.service, args.intervall)
 
-        performance = "'Incoming'=%.2fKB/s;%d;%d;0; 'Outgoing'=%.2fKB/s;%d;%d;0;" % (
+        performance = "'Incoming'=%.2fKB;%d;%d;0; 'Outgoing'=%.2fKB;%d;%d;0;" % (
             dIn, warning, critical, dOut, warning, critical)
 
         if dIn < warning and dOut < warning:
