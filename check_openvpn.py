@@ -218,8 +218,8 @@ if __name__ == '__main__':
                       help='maxconnections - monitor amount of connections\ntraffic - monitor traffic\nmomenttraffic - transfered MB')
     argp.add_argument('-S', '--service', help='Nagios service name')
     argp.add_argument('-i', '--intervall', default=1, type=int, help="Check intervall in seconds for command 'traffic'")
-    argp.add_argument('-w', '--warning', help='warning threshold')
-    argp.add_argument('-c', '--critical', help='critical threshold')
+    argp.add_argument('-w', '--warning', default=-1, help='warning threshold')
+    argp.add_argument('-c', '--critical', default=-1, help='critical threshold')
     args = argp.parse_args()
 
     cmd = args.command.lower()
@@ -228,7 +228,7 @@ if __name__ == '__main__':
 
     # CMD = MAXCONNECTIONS
     if cmd == "maxconnections":
-        conns = get_num_connected(args.hostaddress, args.port)
+        conns = get_num_connected(args.hostaddress, int(args.port))
 
         performance = "'Connections'=%d;%.0f;%.0f;0;" % (conns, warning, critical)
 
@@ -249,24 +249,28 @@ if __name__ == '__main__':
 
     # CMD = TRAFFIC
     elif cmd == "traffic":
-        dIn, dOut = get_avgtraffic(args.hostaddress, args.port, args.service, args.intervall)
+        dIn, dOut = get_avgtraffic(args.hostaddress, int(args.port), args.service, args.intervall)
 
         performance = "'Incoming'=%.2fKB;%d;%d;0; 'Outgoing'=%.2fKB;%d;%d;0;" % (
             dIn, warning, critical, dOut, warning, critical)
 
-        if dIn < warning and dOut < warning:
+        if warning == -1 and critical == -1:
+            performance = "'Incoming'=%.2fKB;;;0; 'Outgoing'=%.2fKB;;;0;" % (dIn, dOut)
             print "OK: In - %.2f; Out - %.2f |%s" % (dIn, dOut, performance)
             exit(0)
+        elif dIn < warning and dOut < warning:
+            print "OK: In - %.2fKB; Out - %.2fKB |%s" % (dIn, dOut, performance)
+            exit(0)
         elif (dIn < critical and dOut < critical) and (dIn >= warning or dOut >= warning):
-            print "WARNING: In - %.2f; Out - %.2f |%s" % (dIn, dOut, performance)
+            print "WARNING: In - %.2fKB; Out - %.2fKB |%s" % (dIn, dOut, performance)
             exit(1)
         elif dIn >= critical or dOut >= critical:
-            print "CRITICAL: In - %.2f; Out - %.2f |%s" % (dIn, dOut, performance)
+            print "CRITICAL: In - %.2fKB; Out - %.2fKB |%s" % (dIn, dOut, performance)
             exit(2)
 
     #CMD = MOMENTTRAFFIC
     elif cmd == "momenttraffic":
-        incoming, outgoing = get_momenttraffic(args.hostaddress, args.port)
+        incoming, outgoing = get_momenttraffic(args.hostaddress, int(args.port))
 
         in_mb = float(incoming)/1024/1024
         out_mb = float(outgoing)/1024/1024
